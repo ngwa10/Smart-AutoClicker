@@ -17,86 +17,32 @@
 -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
     style="@style/AppTheme.Dialog.BackgroundLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <include layout="@layout/include_dialog_navigation_top_bar"
+    <!-- Top bar for navigation (title, save, delete, dismiss) -->
+    <include
+        layout="@layout/include_dialog_navigation_top_bar"
         android:id="@+id/layout_top_bar" />
 
-    <androidx.core.widget.NestedScrollView
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
         android:layout_marginTop="@dimen/margin_vertical_large"
         android:layout_marginBottom="@dimen/margin_vertical_extra_large"
-        android:scrollbars="vertical">
+        android:layout_marginHorizontal="@dimen/margin_horizontal_default"
+        android:gravity="center_vertical">
 
-        <LinearLayout
+        <!-- LOGIC KEY INPUT FIELD ONLY -->
+        <include
+            layout="@layout/include_field_text_input"
+            android:id="@+id/field_logic_key"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="@dimen/margin_horizontal_default"
-            android:orientation="vertical"
-            tools:layout_gravity="center">
-
-            <include layout="@layout/include_field_text_input"
-                android:id="@+id/field_name"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/margin_vertical_small"/>
-
-            <include layout="@layout/include_field_text_input"
-                android:id="@+id/field_press_duration"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/margin_vertical_small"/>
-
-            <com.google.android.material.card.MaterialCardView
-                style="@style/AppTheme.Widget.Card"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginVertical="@dimen/margin_vertical_large">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:layout_marginVertical="@dimen/margin_vertical_default"
-                    android:layout_marginHorizontal="@dimen/margin_horizontal_default">
-
-                    <include layout="@layout/include_field_multi_state"
-                        android:id="@+id/field_click_type"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"/>
-
-                    <com.google.android.material.divider.MaterialDivider
-                        style="@style/AppTheme.Widget.Divider.Horizontal"
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"/>
-
-                    <include layout="@layout/include_field_selector"
-                        android:id="@+id/field_click_selection"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content" />
-
-                    <com.google.android.material.divider.MaterialDivider
-                        style="@style/AppTheme.Widget.Divider.Horizontal"
-                        android:id="@+id/divider_click_offset"
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"/>
-
-                    <include layout="@layout/include_field_selector"
-                        android:id="@+id/field_click_offset"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content" />
-
-                </LinearLayout>
-
-            </com.google.android.material.card.MaterialCardView>
-
-        </LinearLayout>
-
-    </androidx.core.widget.NestedScrollView>
-
+            android:layout_marginBottom="@dimen/margin_vertical_small"
+            android:hint="Enter logic key here" />
+    </LinearLayout>
 </LinearLayout>
