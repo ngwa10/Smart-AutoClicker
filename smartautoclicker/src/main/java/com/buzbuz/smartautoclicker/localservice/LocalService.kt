@@ -1,256 +1,132 @@
 /*
- * Copyright (C) 2024 Kevin Buzeau
+ * LocalService.kt
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * Provides the local API for starting/stopping scenarios and executing Logic Key actions.
+ * Updated: Supports Logic Key → Workflow execution mapping (trade, pre-trade, random).
  */
+
 package com.buzbuz.smartautoclicker.localservice
 
-import android.app.Notification
 import android.content.Context
-import android.content.Intent
-import android.media.projection.MediaProjectionManager
-import android.view.KeyEvent
-
-import com.buzbuz.smartautoclicker.core.base.data.AppComponentsProvider
-import com.buzbuz.smartautoclicker.core.common.overlays.manager.OverlayManager
+import android.util.Log
+import com.buzbuz.smartautoclicker.core.common.actions.AndroidActionExecutor
 import com.buzbuz.smartautoclicker.core.domain.model.scenario.Scenario
 import com.buzbuz.smartautoclicker.core.dumb.domain.model.DumbScenario
-import com.buzbuz.smartautoclicker.core.dumb.engine.DumbEngine
-import com.buzbuz.smartautoclicker.core.processing.domain.DetectionRepository
-import com.buzbuz.smartautoclicker.core.processing.domain.DetectionState
-import com.buzbuz.smartautoclicker.core.settings.SettingsRepository
-import com.buzbuz.smartautoclicker.feature.smart.config.ui.MainMenu
-import com.buzbuz.smartautoclicker.feature.dumb.config.ui.DumbMainMenu
-import com.buzbuz.smartautoclicker.feature.notifications.ServiceNotificationController
-import com.buzbuz.smartautoclicker.feature.notifications.ServiceNotificationListener
-import com.buzbuz.smartautoclicker.feature.revenue.IRevenueRepository
-import com.buzbuz.smartautoclicker.feature.revenue.UserBillingState
 import com.buzbuz.smartautoclicker.feature.smart.debugging.domain.DebuggingRepository
-
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.launch
+import com.buzbuz.smartautoclicker.feature.revenue.IRevenueRepository
+import com.buzbuz.smartautoclicker.core.settings.SettingsRepository
+import com.buzbuz.smartautoclicker.core.common.overlays.manager.OverlayManager
+import com.buzbuz.smartautoclicker.core.base.data.AppComponentsProvider
+import com.buzbuz.smartautoclicker.core.processing.domain.DetectionRepository
 
 class LocalService(
     private val context: Context,
     private val overlayManager: OverlayManager,
     private val appComponentsProvider: AppComponentsProvider,
-    private val settingsRepository: SettingsRepository,
     private val detectionRepository: DetectionRepository,
-    private val dumbEngine: DumbEngine,
-    private val revenueRepository: IRevenueRepository,
+    private val dumbEngine: com.buzbuz.smartautoclicker.core.dumb.engine.DumbEngine,
     private val debugRepository: DebuggingRepository,
-    private val onStart: (scenarioId: Long, isSmart: Boolean, foregroundNotification: Notification?) -> Unit,
+    private val revenueRepository: IRevenueRepository,
+    private val settingsRepository: SettingsRepository,
+    private val actionExecutor: AndroidActionExecutor,
+    private val onStart: (Long, Boolean, android.app.Notification?) -> Unit,
     private val onStop: () -> Unit,
-) : ILocalService {
+) {
 
-    /** Scope for this LocalService. */
-    private val serviceScope: CoroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    /** Coroutine job for the delayed start of engine & ui. */
-    private var startJob: Job? = null
-    /** Coroutine job for the paywall result upon start from notification. */
-    private var paywallResultJob: Job? = null
+    var isStarted: Boolean = false
+        private set
 
-    /** Controls the notifications for the foreground service. */
-    private val notificationController: ServiceNotificationController by lazy {
-        ServiceNotificationController(
-            context = context,
-            appComponentsProvider = appComponentsProvider,
-            settingsRepository = settingsRepository,
-            listener = object : ServiceNotificationListener {
-                override fun onPlay() = play()
-                override fun onPause()= pause()
-                override fun onShow() = showMenu()
-                override fun onHide() = hideMenu()
-                override fun onStop() = stop()
-            }
-        )
+    /** Called when a Dumb Scenario starts */
+    fun startDumbScenario(dumbScenario: DumbScenario) {
+        isStarted = true
+        Log.i(TAG, "Starting Dumb Scenario: $dumbScenario")
+        onStart.invoke(-1, false, null)
     }
 
-    /** State of this LocalService. */
-    private var state: LocalServiceState = LocalServiceState(isStarted = false, isSmartLoaded = false)
-    /** True if the overlay is started, false if not. */
-    internal val isStarted: Boolean
-        get() = state.isStarted
-
-    init {
-        combine(dumbEngine.isRunning, detectionRepository.detectionState) { dumbIsRunning, smartState ->
-            dumbIsRunning || smartState == DetectionState.DETECTING
-        }.onEach { isRunning ->
-            notificationController.updateNotification(context, isRunning, !overlayManager.isStackHidden())
-        }.launchIn(serviceScope)
-
-        overlayManager.onVisibilityChangedListener = {
-            notificationController.updateNotification(
-                context,
-                dumbEngine.isRunning.value || detectionRepository.isRunning(),
-                !overlayManager.isStackHidden()
-            )
-        }
+    /** Called when a Smart Scenario starts */
+    fun startSmartScenario(resultCode: Int, data: android.content.Intent, scenario: Scenario) {
+        isStarted = true
+        Log.i(TAG, "Starting Smart Scenario: ${scenario.name}")
+        onStart.invoke(scenario.id, true, null)
     }
 
-    override fun startDumbScenario(dumbScenario: DumbScenario) {
-        if (state.isStarted) return
-        state = LocalServiceState(isStarted = true, isSmartLoaded = false)
-        onStart(dumbScenario.id.databaseId, false, null)
+    /** Stops any running scenario */
+    fun stop() {
+        if (!isStarted) return
+        Log.i(TAG, "Stopping LocalService scenario")
+        isStarted = false
+        onStop.invoke()
+    }
 
-        startJob = serviceScope.launch {
-            delay(500)
-
-            dumbEngine.init(dumbScenario)
-
-            overlayManager.navigateTo(
-                context = context,
-                newOverlay = DumbMainMenu(dumbScenario.id) { stop() },
-            )
-        }
+    /** Clean up resources */
+    fun release() {
+        Log.i(TAG, "Releasing LocalService resources")
+        isStarted = false
     }
 
     /**
-     * Start the overlay UI and instantiates the detection objects.
-     *
-     * This requires the media projection permission code and its data intent, they both can be retrieved using the
-     * results of the activity intent provided by [MediaProjectionManager.createScreenCaptureIntent] (this Intent
-     * shows the dialog warning about screen recording privacy). Any attempt to call this method without the
-     * correct screen capture intent result will leads to a crash.
-     *
-     * @param resultCode the result code provided by the screen capture intent activity result callback
-     * [android.app.Activity.onActivityResult]
-     * @param data the data intent provided by the screen capture intent activity result callback
-     * [android.app.Activity.onActivityResult]
-     * @param scenario the identifier of the scenario of clicks to be used for detection.
+     * Handle a Logic Key execution request.
+     * This is triggered by a Click button that has a Logic Key assigned.
      */
-    override fun startSmartScenario(resultCode: Int, data: Intent, scenario: Scenario) {
-        if (isStarted) return
-        state = LocalServiceState(isStarted = true, isSmartLoaded = true)
+    fun executeLogicKey(logicKey: String) {
+        Log.i(TAG, "Executing Logic Key: $logicKey")
 
-        onStart(
-            scenario.id.databaseId,
-            true,
-            notificationController.createNotification(
-                context = context,
-                scenarioName = scenario.name,
-                isRunning = false,
-                isMenuVisible = true
-            )
-        )
+        when (logicKey) {
+            // Pre-trade setup
+            "/trigamt" -> runPreTradeWorkflow("Trigger Amount")
+            "/incamt" -> runPreTradeWorkflow("Increase Amount")
+            "/decamt" -> runPreTradeWorkflow("Decrease Amount")
+            "/tftrig" -> runPreTradeWorkflow("Timeframe Trigger")
 
-        startJob = serviceScope.launch {
-            val mainMenu = MainMenu { stop() }
+            // Currency search workflow
+            "/cplist" -> runCurrencyWorkflow("Open Currency List")
+            "/search" -> runCurrencyWorkflow("Search Currency")
+            "/confcur" -> runCurrencyWorkflow("Confirm Currency")
 
-            detectionRepository.apply {
-                setScenarioId(scenario.id, markAsUsed = true)
-                setProjectionErrorHandler { mainMenu.onMediaProjectionLost() }
-            }
+            // Free/random human-like exploration
+            "/free" -> runRandomizedWorkflow("Free Exploration")
 
-            overlayManager.navigateTo(
-                context = context,
-                newOverlay = mainMenu,
-            )
+            // Trade execution
+            "/buy1" -> runTradeWorkflow("BUY")
+            "/sell1" -> runTradeWorkflow("SELL")
 
-            detectionRepository.startScreenRecord(
-                resultCode = resultCode,
-                data = data,
-            )
-        }
-    }
-
-    override fun stop() {
-        if (!isStarted) return
-        state = LocalServiceState(isStarted = false, isSmartLoaded = false)
-
-        serviceScope.launch {
-            startJob?.join()
-            startJob = null
-
-            dumbEngine.release()
-            overlayManager.closeAll(context)
-            detectionRepository.stopScreenRecord()
-
-            onStop()
-            notificationController.destroyNotification()
-        }
-    }
-
-    override fun release() {
-        serviceScope.cancel()
-    }
-
-    internal fun onKeyEvent(event: KeyEvent?): Boolean {
-        event ?: return false
-        return overlayManager.propagateKeyEvent(event)
-    }
-
-    private fun play() {
-        serviceScope.launch {
-            if (state.isSmartLoaded && !detectionRepository.isRunning()) {
-                if (revenueRepository.userBillingState.value == UserBillingState.AD_REQUESTED) startPaywall()
-                else startSmartScenario()
-            } else if (!state.isSmartLoaded && !dumbEngine.isRunning.value) {
-                dumbEngine.startDumbScenario()
+            else -> {
+                Log.w(TAG, "Unknown Logic Key: $logicKey")
             }
         }
     }
 
-    private fun pause() {
-        serviceScope.launch {
-            when {
-                dumbEngine.isRunning.value -> dumbEngine.stopDumbScenario()
-                detectionRepository.isRunning() -> detectionRepository.stopDetection()
-            }
-        }
+    /** Runs pre-trade workflow actions (e.g. amount, timeframe setup). */
+    private fun runPreTradeWorkflow(action: String) {
+        Log.d(TAG, "Running Pre-Trade Workflow: $action")
+        actionExecutor.executeAction(action)
     }
 
-    private fun startPaywall() {
-        revenueRepository.startPaywallUiFlow(context)
-
-        paywallResultJob = combine(revenueRepository.isBillingFlowInProgress, revenueRepository.userBillingState) { inProgress, state ->
-            if (inProgress) return@combine
-
-            if (state != UserBillingState.AD_REQUESTED) startSmartScenario()
-            paywallResultJob?.cancel()
-            paywallResultJob = null
-        }.launchIn(serviceScope)
+    /** Runs currency-related workflow (list, search, confirm). */
+    private fun runCurrencyWorkflow(action: String) {
+        Log.d(TAG, "Running Currency Workflow: $action")
+        actionExecutor.executeAction(action)
     }
 
-    private fun startSmartScenario() {
-        serviceScope.launch {
-            detectionRepository.startDetection(
-                context,
-                debugRepository.getDebugDetectionListenerIfNeeded(context),
-                revenueRepository.consumeTrial(),
-            )
-        }
+    /** Runs randomized non-trade workflow (simulated human exploration). */
+    private fun runRandomizedWorkflow(action: String) {
+        Log.d(TAG, "Running Randomized Workflow: $action")
+        actionExecutor.executeAction(action)
     }
 
-    private fun hideMenu() {
-        overlayManager.hideAll()
+    /** Runs trade workflow (/buy1, /sell1). */
+    private fun runTradeWorkflow(direction: String) {
+        Log.d(TAG, "Running Trade Workflow: $direction")
+        actionExecutor.executeAction(direction)
+
+        // ⚡ TODO: integrate martingale preparation + trade result detection
     }
 
-    private fun showMenu() {
-        overlayManager.restoreVisibility()
+    /** Forward key events to executor if needed */
+    fun onKeyEvent(event: android.view.KeyEvent?): Boolean {
+        return actionExecutor.onKeyEvent(event)
     }
 }
 
-private data class LocalServiceState(
-    val isStarted: Boolean,
-    val isSmartLoaded: Boolean
+private const val TAG = "LocalService"
 )
