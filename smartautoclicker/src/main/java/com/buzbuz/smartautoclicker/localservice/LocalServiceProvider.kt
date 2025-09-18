@@ -1,20 +1,6 @@
-/*
- * Copyright (C) 2024 Kevin Buzeau
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
 package com.buzbuz.smartautoclicker.localservice
+
+import android.util.Log
 
 object LocalServiceProvider {
 
@@ -24,6 +10,7 @@ object LocalServiceProvider {
             field = value
             localServiceCallback?.invoke(field)
         }
+
     /** Callback upon the availability of the [localServiceInstance]. */
     private var localServiceCallback: ((ILocalService?) -> Unit)? = null
         set(value) {
@@ -34,6 +21,7 @@ object LocalServiceProvider {
     fun setLocalService(service: ILocalService?) {
         localServiceInstance = service
     }
+
     /**
      * Static method allowing an activity to register a callback in order to monitor the availability of the
      * [ILocalService]. If the service is already available upon registration, the callback will be immediately
@@ -46,4 +34,25 @@ object LocalServiceProvider {
     }
 
     fun isServiceStarted(): Boolean = localServiceInstance != null
+
+    /**
+     * Trigger a Logic Key action from the UI.
+     *
+     * @param key the logic key assigned to a button.
+     */
+    fun triggerLogicKey(key: String) {
+        val service = localServiceInstance
+        if (service == null) {
+            Log.w(TAG, "No LocalService attached, cannot trigger key: $key")
+            return
+        }
+
+        if (service is LocalService) {
+            service.executeLogicKey(key)
+        } else {
+            Log.w(TAG, "Attached service is not LocalService, cannot execute logic key: $key")
+        }
+    }
 }
+
+private const val TAG = "LocalServiceProvider"
