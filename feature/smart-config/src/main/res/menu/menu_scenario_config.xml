@@ -27,6 +27,11 @@
         android:icon="@drawable/ic_trigger_event"
         android:title="@string/menu_item_title_trigger_events"/>
     <item
+        android:id="@+id/page_trading_buttons"
+        android:enabled="true"
+        android:icon="@drawable/ic_click"
+        android:title="@string/menu_item_title_trading_buttons"/>
+    <item
         android:id="@+id/page_config"
         android:enabled="true"
         android:icon="@drawable/ic_settings"
